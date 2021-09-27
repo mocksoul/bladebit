@@ -1,7 +1,8 @@
 #pragma once
 
-#define STR( x ) #x
 #define DEFER( m, ...)  m( __VA_ARGS__ )
+#define XSTR( x ) #x
+#define STR( x ) XSTR( x )
 
 
 
@@ -145,6 +146,10 @@ struct Span
         : values( values )
         , length( length )
     {}
+
+    inline T& operator[]( unsigned int index ) const { return this->values[index]; }
+    inline T& operator[]( int index ) const { return this->values[index]; }
+
 };
 
 typedef Span<unsigned char> ByteSpan;

@@ -16,15 +16,20 @@ Only Linux is currently completed. There are several platform abstractions misis
 **Linux**
 > *NOTE: Some repositories may have cmake versions not compatible with BLS, in which case you would have to build & install Cmake yourself.*
 
-```
+```bash
 # CentOS or Amazon Linux
+sudo yum group install -y "Development Tools"
 sudo yum install -y cmake numactl-devel
+
+# Ubuntu
+sudo apt install -y build-essential
+sudo apt install -y cmake libnuma-dev
 ```
 
 
 ### Build
 
-> *NOTE: BLS/Relic is currently not compatible with GCC 11*
+> *NOTE: BLS/Relic seems to be incompatible with some versiong of GCC*
 
 
 Install pre-requisites then run:
@@ -32,7 +37,7 @@ Install pre-requisites then run:
 **Linux**
 ```bash
 # Clone the repo & its submodules
-git clone --recursive https://github.com/harold-b/bladebit.git
+git clone --recursive https://github.com/harold-b/bladebit.git && cd bladebit
 
 # Build bls library. Only needs to be done once.
 ./build-bls
@@ -44,21 +49,22 @@ make clean && make -j$(nproc --all)
 make clean && make -j$(nproc --all) CONFIG=release.arm
 ```
 
+The resulting binary will be found at `.bin/release/bladebit` for **x86** or `.bin/release.arm/bladebit` for **ARM**.
+
 ## Usage
-Run `bladebit -h` for usage and command line options.
+Run **bladebit** with the `-h` for usage and command line options.
 
+```bash
+# x86
+.bin/release/bladebit -h
 
-## Support
-You can support me by donating to:
-- XCH: **xch1xd9vlw5t3ul0chqlg3pqffy5ecq8tude8sc4v6q5r66raavczuqsr0mkwc**
-- BTC: **bc1qy3uz29ns7jlaql36ml0ajhus4r24v8jfcja69e**
-- ETH: **0x70978b4236aeBDd79c6ea8602656b53acC03f591**
+# ARM
+.bin/release.arm/bladebit -h
+```
 
 
 ## License
-Licensed under AGPLv3 See [LICENSE](LICENSE).
-For special licensing for commercial use, please contact me.
-
+Licensed under the [Apache 2.0 license](https://www.apache.org/licenses/LICENSE-2.0). See [LICENSE](LICENSE).
 
 ## Build Tools
 This project synchronizes Makefiles, VS project files and VS Code c_cpp_properties.json files by a custom tool called psync which is not currently published. I created the tool a while back for cross-platform game engine development and it is scrappy-ly coded and unclean. At some point I will publish it to facilitate development.

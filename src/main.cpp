@@ -3,6 +3,7 @@
 #include <string>
 #include <thread>
 
+#include "Version.h"
 #include "Util.h"
 #include "util/Log.h"
 #include "SysHost.h"
@@ -22,6 +23,9 @@ extern "C" {
 #include "bls/util.hpp"
 #pragma GCC diagnostic pop
 
+#define PLOT_FILE_PREFIX_LEN (sizeof("plot-k32-2021-08-05-18-55-")-1)
+#define PLOT_FILE_FMT_LEN (sizeof( "/plot-k32-2021-08-05-18-55-77a011fc20f0003c3adcc739b615041ae56351a22b690fd854ccb6726e5f43b7.plot.tmp" ))
+
 /// Internal Data Structures
 struct Config
 {
@@ -29,6 +33,7 @@ struct Config
     uint            plotCount          = 1;
     bool            warmStart          = false;
     bool            disableNuma        = false;
+    bool            disableCpuAffinity = false;
 
     bls::G1Element  farmerPublicKey;
     bls::G1Element* poolPublicKey      = nullptr;
@@ -39,7 +44,8 @@ struct Config
     int             maxFailCount       = 100;
 
     const char*     plotId             = nullptr;
-
+    const char*     plotMemo           = nullptr;
+    bool            showMemo           = false;
 };
 
 /// Internal Functions
@@ -95,12 +101,22 @@ OPTIONS:
 
  -i, --plot-id        : Specify a plot id for debugging.
 
+ --memo               : Specify a plot memo for debugging.
+
+ --show-memo          : Output the memo of the next plot the be plotted.
+
  -v, --verbose        : Enable verbose output.
 
  -m, --no-numa        : Disable automatic NUMA aware memory binding.
                         If you set this parameter in a NUMA system you
                         will likely get degraded performance.
 
+ --no-cpu-affinity    : Disable assigning automatic thread affinity.
+                        This is useful when running multiple simultaneous
+                        instances of bladebit as you can manually
+                        assign thread affinity yourself when launching bladebit.
+
+ --version            : Display current version.
 )";
 
 
@@ -116,14 +132,7 @@ int main( int argc, const char* argv[] )
 
     // Create the plot output path
     size_t outputFolderLen = strlen( cfg.outputFolder );
-    // initial dir sep == 1
-    // plot-k32 == 8
-    // +1 sep
-    // ymdhm is 4+2+2+2+2 + 4 separators == 16
-    // +1 sep
-    // plotid
-    // .plot.tmp == 9
-    char* plotOutPath = new char[outputFolderLen + 1+8+1+16+1+64+9+1];
+    char* plotOutPath = new char[outputFolderLen + PLOT_FILE_FMT_LEN];
 
     if( outputFolderLen )
     {
@@ -138,7 +147,14 @@ int main( int argc, const char* argv[] )
     PlotRequest req;
     ZeroMem( &req );
 
-    MemPlotter plotter( cfg.threads, cfg.warmStart, cfg.disableNuma );
+    // #TODO: Don't let this config to permanently remain on the stack
+    MemPlotConfig plotCfg;
+    plotCfg.threadCount   = cfg.threads;
+    plotCfg.noNUMA        = cfg.disableNuma;
+    plotCfg.noCPUAffinity = cfg.disableCpuAffinity;
+    plotCfg.warmStart     = cfg.warmStart;
+
+    MemPlotter plotter( plotCfg );
 
     byte   plotId[32];
     byte   memo  [48+48+32];
@@ -157,8 +173,15 @@ int main( int argc, const char* argv[] )
         // Generate a new plot id
         GeneratePlotIdAndMemo( cfg, plotId, memo, memoSize );
 
+        // Apply debug plot id and/or memo
         if( cfg.plotId )
             HexStrToBytes( cfg.plotId, 64, plotId, 32 );
+
+        if( cfg.plotMemo )
+        {
+            const size_t memoLen = strlen( cfg.plotMemo );
+            HexStrToBytes( cfg.plotMemo, memoLen, memo, memoLen/2 );
+        }
         
         // Convert plot id to string
         {
@@ -170,9 +193,29 @@ int main( int argc, const char* argv[] )
         }
 
         // Set the output path
-        memcpy( plotOutPath+outputFolderLen+26, plotIdStr, 64 );
+        {
+            time_t     now = time( nullptr  );
+            struct tm* t   = localtime( &now ); ASSERT( t );
+            
+            const size_t r = strftime( plotOutPath + outputFolderLen, PLOT_FILE_FMT_LEN, "plot-k32-%Y-%m-%d-%H-%M-", t );
+            if( r != PLOT_FILE_PREFIX_LEN )
+                Fatal( "Failed to generate plot file." );
+
+            memcpy( plotOutPath + outputFolderLen + PLOT_FILE_PREFIX_LEN     , plotIdStr, 64 );
+            memcpy( plotOutPath + outputFolderLen + PLOT_FILE_PREFIX_LEN + 64, ".plot.tmp", sizeof( ".plot.tmp" ) );
+        }
 
         Log::Line( "Generating plot %d / %d: %s", i+1, cfg.plotCount, plotIdStr );
+        if( cfg.showMemo )
+        {
+            char memoStr[(48+48+32)*2 + 1];
+
+            size_t numEncoded = 0;
+            BytesToHexStr( memo, memoSize, memoStr, sizeof( memoStr ) - 1, numEncoded );
+            memoStr[numEncoded*2] = 0;
+
+            Log::Line( "Plot Memo: %s", memoStr );
+        }
         Log::Line( "" );
 
         // Prepare the request
@@ -297,13 +340,40 @@ void ParseCommandLine( int argc, const char* argv[], Config& cfg )
                     Fatal( "Invalid plot id." );
             }
         }
+        else if( check( "--memo" ) )
+        {
+            cfg.plotMemo = value();
+
+            size_t len = strlen( cfg.plotMemo );
+            if( len > 2 && cfg.plotMemo[0] == '0' && cfg.plotMemo[1] == 'x' )
+            {
+                cfg.plotMemo += 2;
+                len -= 2;
+            }
+            
+            if( len/2 != (48 + 48 + 32) && len != (32 + 48 + 32) )
+                Fatal( "Invalid plot memo." );
+        }
+        else if( check( "--show-memo" ) )
+        {
+            cfg.showMemo = true;
+        }
         else if( check( "-m" ) || check( "--no-numa" ) )
         {
             cfg.disableNuma = true;
         }
+        else if( check( "--no-cpu-affinity" ) )
+        {
+            cfg.disableCpuAffinity = true;
+        }
         else if( check( "-v" ) || check( "--verbose" ) )
         {
             Log::SetVerbose( true );
+        }
+        else if( check( "--version" ) )
+        {
+            Log::Line( BLADEBIT_VERSION_STR );
+            exit( 0 );
         }
         else
         {
