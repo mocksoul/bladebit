@@ -132,6 +132,7 @@ int main( int argc, const char* argv[] )
 
     // Create the plot output path
     size_t outputFolderLen = strlen( cfg.outputFolder );
+
     char* plotOutPath = new char[outputFolderLen + PLOT_FILE_FMT_LEN];
 
     if( outputFolderLen )
@@ -164,12 +165,6 @@ int main( int argc, const char* argv[] )
     int failCount = 0;
     for( uint i = 0; i < cfg.plotCount; i++ )
     {
-        time_t now = time(NULL);
-        struct tm *t = localtime(&now);
-        strftime(plotOutPath+outputFolderLen, outputFolderLen + 99 + 1, "plot-k32-%Y-%m-%d-%H-%M-", t);
-
-        memcpy( plotOutPath+outputFolderLen+26+64, ".plot.tmp", sizeof( ".plot.tmp" ) );
-
         // Generate a new plot id
         GeneratePlotIdAndMemo( cfg, plotId, memo, memoSize );
 
